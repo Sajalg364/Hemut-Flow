@@ -192,6 +192,19 @@ export function ChatProvider({ children }) {
           }
           return u;
         }));
+        // Update dmConversations status reactively
+        setDmConversations(prev => prev.map(dm => {
+          if (dm.other_user?.id === presenceData.user_id) {
+            return {
+              ...dm,
+              other_user: {
+                ...dm.other_user,
+                status: presenceData.status
+              }
+            };
+          }
+          return dm;
+        }));
         break;
 
       case 'typing_indicator':
@@ -245,6 +258,18 @@ export function ChatProvider({ children }) {
         ws.send(JSON.stringify({ type: 'subscribe_channel', channel_id: channelId }));
       });
 
+      // Refetch channels & DMs to synchronize unread counts and channel list
+      fetchChannels();
+      fetchDMConversations();
+
+      // If we are currently viewing a channel, refetch its messages to sync history
+      const activeChannelId = currentChannelRef.current;
+      if (activeChannelId) {
+        fetchMessages(activeChannelId).then(data => {
+          setMessages(data.messages || []);
+        });
+      }
+
       // Start heartbeat
       if (heartbeatRef.current) clearInterval(heartbeatRef.current);
       heartbeatRef.current = setInterval(() => {
@@ -278,7 +303,7 @@ export function ChatProvider({ children }) {
     ws.onerror = (error) => {
       console.error('WebSocket error:', error);
     };
-  }, [isAuthenticated, handleWSMessage]);
+  }, [isAuthenticated, handleWSMessage, fetchChannels, fetchDMConversations, fetchMessages, setMessages]);
 
   // Subscribe to a channel's real-time updates
   const subscribeToChannel = useCallback((channelId) => {

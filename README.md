@@ -75,9 +75,9 @@ A **Slack-style collaboration platform** built for logistics teams, featuring re
 - ✅ **Mock Shipment Data** — Realistic Indian logistics data (6 shipments)
 
 ### Presence System
-- ✅ **Online/Away/Offline** — Green/Yellow/Gray indicators
+- ✅ **Online/Away/Offline** — Green/Yellow/Gray status dots in sidebar and DM list
 - ✅ **Heartbeat-based** — 30s client heartbeat, 60s Redis TTL
-- ✅ **Real-time Updates** — Broadcast via Redis pub/sub
+- ✅ **Real-time Updates** — Reactive transitions broadcast via WebSockets and Redis pub/sub
 
 ### AI Feature
 - ✅ **Channel Summarization** — "Catch me up" on any channel
@@ -85,8 +85,8 @@ A **Slack-style collaboration platform** built for logistics teams, featuring re
 - ✅ **Redis Caching** — 5-minute cache to avoid redundant API calls
 
 ### Technical
-- ✅ **XMLHttpRequest** — All form validation uses raw XHR (not fetch/axios)
-- ✅ **Auto-reconnect** — Exponential backoff WebSocket reconnection
+- ✅ **XMLHttpRequest** — All form validation and REST APIs use raw XHR (no fetch/axios)
+- ✅ **Auto-reconnect & Sync** — Reconnection with automated message catch-up and channel sync
 - ✅ **Typing Indicators** — Real-time "user is typing..." display
 
 ---
@@ -107,7 +107,7 @@ Logistics teams operate **24/7 across time zones**. Dispatchers coming on shift 
 1. User clicks **"🤖 Summarize"** button or types **`/summarize`** (optionally `/summarize 12h`)
 2. Backend fetches last N hours of messages from PostgreSQL (capped at 200)
 3. Messages are formatted with timestamps and usernames
-4. Sent to **Google Gemini** (`gemini-2.0-flash`) with a **logistics-aware system prompt** focusing on:
+4. Sent to **Google Gemini** (`gemini-2.5-flash`) with a **logistics-aware system prompt** focusing on:
    - Shipment delays and status changes
    - Route diversions
    - Action items and escalations
@@ -119,7 +119,7 @@ Logistics teams operate **24/7 across time zones**. Dispatchers coming on shift 
 
 | Aspect | Current | Production |
 |--------|---------|------------|
-| **Model** | Gemini 2.0 Flash | Gemini Pro or Claude for better accuracy |
+| **Model** | Gemini 2.5 Flash | Gemini Pro or Claude for better accuracy |
 | **Caching** | 5-min Redis TTL | Intelligent invalidation on new messages |
 | **Token limits** | 200 message cap | Chunked summarization with map-reduce |
 | **Streaming** | Via REST response | Full WebSocket streaming for progressive UX |
@@ -147,79 +147,73 @@ Logistics teams operate **24/7 across time zones**. Dispatchers coming on shift 
 ## 🚀 Setup & Running
 
 ### Prerequisites
-
-- **Docker Desktop** — for PostgreSQL and Redis
-- **Python 3.11+** — for the backend
-- **Node.js 18+** — for the frontend
+- **Docker Desktop**
 - **Google Gemini API Key** — for AI summarization ([Get one here](https://aistudio.google.com/apikey))
 
-### 1. Clone & Configure
+---
 
-```bash
-git clone <your-repo-url>
-cd Hemut
+### Option A: Complete Docker Orchestration (Recommended)
+This mode builds and starts all services (PostgreSQL, Redis, FastAPI Backend, Next.js Frontend) in a single container network.
 
-# Copy and edit environment variables
-cp .env.example .env
-# Edit .env and add your GEMINI_API_KEY
-```
+1. **Clone & Configure**:
+   ```bash
+   git clone https://github.com/Sajalg364/Hemut-Flow.git
+   cd Hemut
+   
+   # Copy and configure .env
+   cp .env.example .env
+   # Add your GEMINI_API_KEY to the .env file
+   ```
 
-### 2. Start Infrastructure (PostgreSQL + Redis)
+2. **Boot All Services**:
+   ```bash
+   docker-compose up --build
+   ```
+   *Note: This automatically creates tables, seeds mock database values (7 default channels and 6 logistics shipments), and mounts assets.*
 
-```bash
-docker-compose up -d
-```
+3. **Open the App**:
+   - Access the frontend: **http://localhost:3000**
+   - Access the interactive FastAPI swagger: **http://localhost:8000/docs**
 
-Verify they're running:
-```bash
-docker ps
-# Should show hemut-postgres and hemut-redis
-```
+---
 
-### 3. Start Backend
+### Option B: Local Dev Mode (Hybrid Host + Docker)
+If you want to run backend and frontend natively on your host machine:
 
-```bash
-cd backend
+1. **Clone & Configure**:
+   ```bash
+   git clone https://github.com/Sajalg364/Hemut-Flow.git
+   cd Hemut
+   cp .env.example .env
+   ```
 
-# Create and activate virtual environment
-python -m venv venv
-# Windows:
-venv\Scripts\activate
-# macOS/Linux:
-# source venv/bin/activate
+2. **Start Infrastructure (PostgreSQL & Redis)**:
+   ```bash
+   docker-compose up -d postgres redis
+   ```
 
-# Install dependencies
-pip install -r requirements.txt
+3. **Start Backend**:
+   ```bash
+   cd backend
+   python -m venv venv
+   # Windows:
+   venv\Scripts\activate
+   # macOS/Linux: source venv/bin/activate
+   pip install -r requirements.txt
+   uvicorn app.main:app --reload --port 8000
+   ```
 
-# Start the server (auto-creates tables & seeds data)
-uvicorn app.main:app --reload --port 8000
-```
+4. **Start Frontend**:
+   ```bash
+   cd frontend
+   npm install
+   npm run dev
+   ```
 
-The backend will:
-- Create all database tables automatically
-- Seed 7 default channels (#general, #route-east, #warehouse-mumbai, etc.)
-- Seed 6 mock shipments (SHIP-1001 through SHIP-1042)
-
-### 4. Start Frontend
-
-```bash
-cd frontend
-
-# Install dependencies
-npm install
-
-# Start dev server
-npm run dev
-```
-
-### 5. Use the App
-
-1. Open **http://localhost:3000** in your browser
-2. **Register** a new account
-3. **Join channels** and start messaging
-4. Try **`/shipment SHIP-1042`** to see a shipment card
-5. Try **`/summarize`** or click the **🤖 Summarize** button for AI summary
-6. Open a **second browser tab**, register another user, and test real-time messaging
+5. **Test Features**:
+   - Open **http://localhost:3000** and register a user.
+   - Join pre-seeded channels like `#warehouse-mumbai` or `#route-east`.
+   - Send `/shipment SHIP-1042` to pull details, or click the **🤖 Summarize** button for AI digests.
 
 ---
 
@@ -356,22 +350,13 @@ Once the backend is running, visit **http://localhost:8000/docs** for interactiv
 
 6. **Monitoring:** Structured logging, Prometheus metrics, distributed tracing.
 
----
-
 ## 📝 Commit History
 
-This project was built incrementally with meaningful commits. Key milestones:
-1. Infrastructure setup (Docker, env config)
-2. Backend models and database
-3. Auth system (JWT + bcrypt)
-4. Channel and message APIs
-5. WebSocket real-time system
-6. Frontend auth pages
-7. Chat UI with real-time messaging
-8. Shipment slash command
-9. AI summarization
-10. Tests and documentation
+This project was built incrementally with meaningful commits:
+1. feat: initial working prototype of Hemut logistics collaboration platform
+11. fix: updated ai model & chat refresh issue
+12. feat: implement DM presence reactivity, WS reconnect sync, and full Docker orchestration
 
 ---
 
-Built with ❤️ for the Hemut trial project.
+Built by Sajal Mahajan
