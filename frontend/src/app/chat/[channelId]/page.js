@@ -153,6 +153,7 @@ export default function ChannelPage() {
     messages, setMessages, fetchMessages, sendMessage,
     subscribeToChannel, sendTyping, typingUsers,
     channels, dmConversations, fetchChannels,
+    setCurrentChannel, clearChannelUnread,
   } = useChat();
 
   const [messageInput, setMessageInput] = useState('');
@@ -173,6 +174,9 @@ export default function ChannelPage() {
       setMessages([]);
       setAiSummary(null);
 
+      // Track which channel is active for unread logic
+      setCurrentChannel(channelId);
+
       try {
         // Get channel info
         const { data: chInfo } = await xhrGet(
@@ -181,10 +185,13 @@ export default function ChannelPage() {
         );
         setChannelInfo(chInfo);
 
-        // Get messages
+        // Get messages (also clears unread on backend)
         const data = await fetchMessages(channelId);
         setMessages(data.messages || []);
         setHasMore(data.has_more || false);
+
+        // Clear unread badge in the sidebar immediately
+        clearChannelUnread(channelId);
 
         // Subscribe to real-time updates
         subscribeToChannel(channelId);
@@ -196,7 +203,12 @@ export default function ChannelPage() {
     };
 
     if (channelId) loadChannel();
-  }, [channelId, fetchMessages, subscribeToChannel, setMessages]);
+
+    // Cleanup: reset active channel when navigating away
+    return () => {
+      setCurrentChannel(null);
+    };
+  }, [channelId, fetchMessages, subscribeToChannel, setMessages, setCurrentChannel, clearChannelUnread]);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {

@@ -104,18 +104,24 @@ class ConnectionManager:
             pubsub = redis.pubsub()
             # Subscribe to presence channel
             await pubsub.subscribe("presence")
+            subscribed = set()
 
             while self._running:
                 try:
-                    # Also subscribe to any channels that have local users
+                    # Subscribe to any new channels that have local users
                     current_channels = set(self.channel_users.keys())
-                    subscribed = set()
+                    new_channels = current_channels - subscribed
+                    removed_channels = subscribed - current_channels
 
-                    for channel_id in current_channels:
+                    for channel_id in new_channels:
                         ch_name = f"channel:{channel_id}"
-                        if ch_name not in subscribed:
-                            await pubsub.subscribe(ch_name)
-                            subscribed.add(ch_name)
+                        await pubsub.subscribe(ch_name)
+                        subscribed.add(channel_id)
+
+                    for channel_id in removed_channels:
+                        ch_name = f"channel:{channel_id}"
+                        await pubsub.unsubscribe(ch_name)
+                        subscribed.discard(channel_id)
 
                     message = await pubsub.get_message(
                         ignore_subscribe_messages=True, timeout=1.0

@@ -21,6 +21,12 @@ export function ChatProvider({ children }) {
   const reconnectTimeoutRef = useRef(null);
   const heartbeatRef = useRef(null);
   const subscribedChannelsRef = useRef(new Set());
+  const currentChannelRef = useRef(null);
+
+  // Keep currentChannelRef in sync
+  useEffect(() => {
+    currentChannelRef.current = currentChannel;
+  }, [currentChannel]);
 
   // Fetch channels
   const fetchChannels = useCallback(async () => {
@@ -73,6 +79,11 @@ export function ChatProvider({ children }) {
         { content, message_type: messageType, metadata_json: metadataJson },
         getAuthHeaders()
       );
+      // Optimistically add the sent message to the UI immediately
+      setMessages(prev => {
+        if (prev.some(m => m.id === data.id)) return prev;
+        return [...prev, data];
+      });
       return data;
     } catch (err) {
       console.error('Failed to send message:', err);
@@ -116,6 +127,102 @@ export function ChatProvider({ children }) {
       throw err;
     }
   }, [fetchDMConversations]);
+
+  // Clear unread badge for a channel in the sidebar state
+  const clearChannelUnread = useCallback((channelId) => {
+    setChannels(prev => prev.map(ch => {
+      if (ch.id === channelId) {
+        return { ...ch, unread_count: 0 };
+      }
+      return ch;
+    }));
+    setDmConversations(prev => prev.map(dm => {
+      if (dm.channel_id === channelId) {
+        return { ...dm, unread_count: 0 };
+      }
+      return dm;
+    }));
+  }, []);
+
+  // Handle incoming WebSocket messages
+  const handleWSMessage = useCallback((message) => {
+    switch (message.type) {
+      case 'new_message':
+        const msgData = message.data;
+        // Add message to the current view if it belongs to the active channel
+        setMessages(prev => {
+          // Prevent duplicates (e.g. optimistic send + WS echo)
+          if (prev.some(m => m.id === msgData.id)) return prev;
+          return [...prev, msgData];
+        });
+        // Update unread counts in channels sidebar
+        // If the message is for the channel the user is currently viewing, don't increment
+        const activeChannelId = currentChannelRef.current;
+        if (msgData.channel_id !== activeChannelId) {
+          setChannels(prev => prev.map(ch => {
+            if (ch.id === msgData.channel_id) {
+              return { ...ch, unread_count: (ch.unread_count || 0) + 1 };
+            }
+            return ch;
+          }));
+          setDmConversations(prev => prev.map(dm => {
+            if (dm.channel_id === msgData.channel_id) {
+              return { ...dm, unread_count: (dm.unread_count || 0) + 1 };
+            }
+            return dm;
+          }));
+        }
+        break;
+
+      case 'presence_update':
+        const presenceData = message.data;
+        setOnlineUsers(prev => {
+          const next = new Set(prev);
+          if (presenceData.status === 'online') {
+            next.add(presenceData.user_id);
+          } else {
+            next.delete(presenceData.user_id);
+          }
+          return next;
+        });
+        // Update allUsers status
+        setAllUsers(prev => prev.map(u => {
+          if (u.id === presenceData.user_id) {
+            return { ...u, status: presenceData.status };
+          }
+          return u;
+        }));
+        break;
+
+      case 'typing_indicator':
+        const typingData = message.data;
+        setTypingUsers(prev => ({
+          ...prev,
+          [typingData.channel_id]: {
+            user_id: typingData.user_id,
+            username: typingData.username,
+            timestamp: Date.now(),
+          }
+        }));
+        // Clear typing after 3 seconds
+        setTimeout(() => {
+          setTypingUsers(prev => {
+            const next = { ...prev };
+            if (next[typingData.channel_id]?.user_id === typingData.user_id) {
+              delete next[typingData.channel_id];
+            }
+            return next;
+          });
+        }, 3000);
+        break;
+
+      case 'heartbeat_ack':
+        break;
+
+      default:
+        console.log('Unknown WS message type:', message.type);
+    }
+  }, []);
 
   // WebSocket connection
   const connectWebSocket = useCallback(() => {
@@ -171,76 +278,7 @@ export function ChatProvider({ children }) {
     ws.onerror = (error) => {
       console.error('WebSocket error:', error);
     };
-  }, [isAuthenticated]);
-
-  // Handle incoming WebSocket messages
-  const handleWSMessage = useCallback((message) => {
-    switch (message.type) {
-      case 'new_message':
-        const msgData = message.data;
-        setMessages(prev => {
-          // Prevent duplicates
-          if (prev.some(m => m.id === msgData.id)) return prev;
-          return [...prev, msgData];
-        });
-        // Update unread counts in channels
-        setChannels(prev => prev.map(ch => {
-          if (ch.id === msgData.channel_id) {
-            return { ...ch, unread_count: (ch.unread_count || 0) + 1 };
-          }
-          return ch;
-        }));
-        break;
-
-      case 'presence_update':
-        const presenceData = message.data;
-        setOnlineUsers(prev => {
-          const next = new Set(prev);
-          if (presenceData.status === 'online') {
-            next.add(presenceData.user_id);
-          } else {
-            next.delete(presenceData.user_id);
-          }
-          return next;
-        });
-        // Update allUsers status
-        setAllUsers(prev => prev.map(u => {
-          if (u.id === presenceData.user_id) {
-            return { ...u, status: presenceData.status };
-          }
-          return u;
-        }));
-        break;
-
-      case 'typing_indicator':
-        const typingData = message.data;
-        setTypingUsers(prev => ({
-          ...prev,
-          [typingData.channel_id]: {
-            user_id: typingData.user_id,
-            username: typingData.username,
-            timestamp: Date.now(),
-          }
-        }));
-        // Clear typing after 3 seconds
-        setTimeout(() => {
-          setTypingUsers(prev => {
-            const next = { ...prev };
-            if (next[typingData.channel_id]?.user_id === typingData.user_id) {
-              delete next[typingData.channel_id];
-            }
-            return next;
-          });
-        }, 3000);
-        break;
-
-      case 'heartbeat_ack':
-        break;
-
-      default:
-        console.log('Unknown WS message type:', message.type);
-    }
-  }, []);
+  }, [isAuthenticated, handleWSMessage]);
 
   // Subscribe to a channel's real-time updates
   const subscribeToChannel = useCallback((channelId) => {
@@ -299,6 +337,7 @@ export function ChatProvider({ children }) {
     subscribeToChannel,
     sendTyping,
     fetchUsers,
+    clearChannelUnread,
   };
 
   return (
