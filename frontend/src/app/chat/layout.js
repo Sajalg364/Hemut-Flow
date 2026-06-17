@@ -8,10 +8,13 @@ import Link from 'next/link';
 
 function Sidebar() {
   const { user, logout } = useAuth();
-  const { channels, dmConversations, allUsers, onlineUsers, createChannel, startDM, fetchChannels } = useChat();
+  const { channels, dmConversations, allUsers, onlineUsers, createChannel, joinChannel, startDM, fetchChannels, fetchAvailableChannels } = useChat();
   const pathname = usePathname();
   const router = useRouter();
   const [showCreateChannel, setShowCreateChannel] = useState(false);
+  const [showBrowseChannels, setShowBrowseChannels] = useState(false);
+  const [availableChannels, setAvailableChannels] = useState([]);
+  const [browseLoading, setBrowseLoading] = useState(false);
   const [showNewDM, setShowNewDM] = useState(false);
   const [newChannelName, setNewChannelName] = useState('');
   const [newChannelDesc, setNewChannelDesc] = useState('');
@@ -28,6 +31,22 @@ function Sidebar() {
     } catch (err) {
       alert(err?.message || 'Failed to create channel');
     }
+  };
+
+  const handleBrowseChannels = async () => {
+    setBrowseLoading(true);
+    setShowBrowseChannels(true);
+    const allChannels = await fetchAvailableChannels();
+    setAvailableChannels(allChannels);
+    setBrowseLoading(false);
+  };
+
+  const handleJoinChannel = async (channelId) => {
+    await joinChannel(channelId);
+    // Refresh the available channels list to update the "Joined" state
+    const allChannels = await fetchAvailableChannels();
+    setAvailableChannels(allChannels);
+    router.push(`/chat/${channelId}`);
   };
 
   const handleStartDM = async (userId) => {
@@ -58,7 +77,10 @@ function Sidebar() {
         <div className="sidebar-section">
           <div className="sidebar-section-header">
             <span>Channels</span>
-            <button onClick={() => setShowCreateChannel(true)} title="Create Channel">+</button>
+            <div style={{ display: 'flex', gap: '4px' }}>
+              <button onClick={handleBrowseChannels} title="Browse Channels" style={{ fontSize: '0.7rem' }}>🔍</button>
+              <button onClick={() => setShowCreateChannel(true)} title="Create Channel">+</button>
+            </div>
           </div>
 
           {channels.map(channel => (
@@ -189,6 +211,67 @@ function Sidebar() {
                 <div className="empty-state" style={{ padding: '20px' }}>
                   <p>No other users found. Invite teammates to get started!</p>
                 </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Browse Channels Modal */}
+      {showBrowseChannels && (
+        <div className="modal-overlay" onClick={() => setShowBrowseChannels(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Browse Channels</h3>
+              <button className="btn-icon" onClick={() => setShowBrowseChannels(false)}>✕</button>
+            </div>
+            <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+              {browseLoading ? (
+                <div className="empty-state" style={{ padding: '20px' }}>
+                  <div className="spinner" style={{ width: 24, height: 24, borderWidth: 2 }}></div>
+                  <p style={{ marginTop: 8 }}>Loading channels...</p>
+                </div>
+              ) : availableChannels.length === 0 ? (
+                <div className="empty-state" style={{ padding: '20px' }}>
+                  <p>No channels available. Create one!</p>
+                </div>
+              ) : (
+                availableChannels.map(ch => {
+                  const isJoined = channels.some(c => c.id === ch.id);
+                  return (
+                    <div key={ch.id} className="browse-channel-item">
+                      <div className="browse-channel-info">
+                        <div className="browse-channel-icon">#</div>
+                        <div className="browse-channel-details">
+                          <div className="browse-channel-name">{ch.name}</div>
+                          {ch.description && (
+                            <div className="browse-channel-desc" title={ch.description}>
+                              {ch.description}
+                            </div>
+                          )}
+                          <div className="browse-channel-meta">
+                            <span>👤 {ch.member_count} {ch.member_count === 1 ? 'member' : 'members'}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="browse-channel-actions">
+                        {isJoined ? (
+                          <div className="browse-channel-joined">
+                            ✓ Joined
+                          </div>
+                        ) : (
+                          <button
+                            className="btn btn-primary"
+                            style={{ padding: '8px 16px', fontSize: '0.85rem' }}
+                            onClick={() => handleJoinChannel(ch.id)}
+                          >
+                            Join
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
               )}
             </div>
           </div>

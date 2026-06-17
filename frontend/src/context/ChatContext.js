@@ -38,6 +38,17 @@ export function ChatProvider({ children }) {
     }
   }, []);
 
+  // Fetch all available channels (for browse/discover)
+  const fetchAvailableChannels = useCallback(async () => {
+    try {
+      const { data } = await xhrGet(`${API_URL}/channels/available`, getAuthHeaders());
+      return data;
+    } catch (err) {
+      console.error('Failed to fetch available channels:', err);
+      return [];
+    }
+  }, []);
+
   // Fetch DM conversations
   const fetchDMConversations = useCallback(async () => {
     try {
@@ -363,6 +374,7 @@ export function ChatProvider({ children }) {
     sendTyping,
     fetchUsers,
     clearChannelUnread,
+    fetchAvailableChannels,
   };
 
   return (
