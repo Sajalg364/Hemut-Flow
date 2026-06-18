@@ -2,11 +2,14 @@
 
 A **Slack-style collaboration platform** built for logistics teams, featuring real-time messaging, channels, direct messages, shipment tracking, and AI-powered channel summarization.
 
+**🟢 Live Application:** [https://hemut-flow-frontend.onrender.com](https://hemut-flow-frontend.onrender.com)
+
 ![Tech Stack](https://img.shields.io/badge/FastAPI-009688?style=flat&logo=fastapi&logoColor=white)
 ![Next.js](https://img.shields.io/badge/Next.js-000000?style=flat&logo=next.js&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=flat&logo=postgresql&logoColor=white)
 ![Redis](https://img.shields.io/badge/Redis-DC382D?style=flat&logo=redis&logoColor=white)
 ![WebSocket](https://img.shields.io/badge/WebSocket-010101?style=flat&logo=socket.io&logoColor=white)
+![Render](https://img.shields.io/badge/Render-46E3B7?style=flat&logo=render&logoColor=white)
 
 ---
 
@@ -17,6 +20,7 @@ A **Slack-style collaboration platform** built for logistics teams, featuring re
 - [AI Feature: Channel Summarization](#-ai-feature-channel-summarization)
 - [Tech Stack](#-tech-stack)
 - [Setup & Running](#-setup--running)
+- [Deployment Architecture](#-deployment-architecture)
 - [Testing](#-testing)
 - [Project Structure](#-project-structure)
 - [API Documentation](#-api-documentation)
@@ -130,12 +134,13 @@ Logistics teams operate **24/7 across time zones**. Dispatchers coming on shift 
 |-------|-----------|---------|
 | Frontend | Next.js 14 (App Router) | React SPA with routing |
 | Backend | FastAPI (Python) | Async REST API + WebSocket |
-| Database | PostgreSQL 15 | Durable data storage |
-| Cache/PubSub | Redis 7 | Real-time fan-out + caching |
-| AI | Google Gemini | Channel summarization |
+| Database | PostgreSQL 15 | Durable data storage (Local: Docker, Live: Supabase + psycopg3) |
+| Cache/PubSub | Redis 7 | Real-time fan-out + caching (Local: Docker, Live: Upstash) |
+| AI | Google Gemini | Channel summarization & proactive escalation |
 | Auth | JWT + bcrypt | Stateless authentication |
 | HTTP | XMLHttpRequest | Form validation (project requirement) |
 | Infrastructure | Docker Compose | Local dev environment |
+| Hosting | Render | Full-stack cloud deployment |
 
 ---
 
@@ -209,6 +214,17 @@ If you want to run backend and frontend natively on your host machine:
    - Open **http://localhost:3000** and register a user.
    - Join pre-seeded channels like `#warehouse-mumbai` or `#route-east`.
    - Send `/shipment SHIP-1042` to pull details, or click the **🤖 Summarize** button for AI digests.
+
+---
+
+## 🌍 Deployment Architecture
+
+The live application is fully deployed using cloud-native managed services to ensure high availability:
+
+1. **Frontend**: Deployed on **Render** (Node.js environment).
+2. **Backend**: Deployed on **Render** (Python ASGI environment via Uvicorn).
+3. **Database**: Managed **Supabase PostgreSQL**. Uses `psycopg3` driver natively to support PgBouncer transaction pooling.
+4. **Redis**: Managed **Upstash Redis** for low-latency pub/sub and caching.
 
 ---
 
@@ -356,6 +372,8 @@ This project was built incrementally with meaningful commits:
 4. `feat: added Browse Channels discovery feature`
 5. `feat: implemented proactive AI escalation detection, pagination, leave channels`
 6. `feat: added message edit/delete CRUD, slash command autocomplete`
+7. `feat: full stack deployment configuration for Render`
+8. `fix: switch from asyncpg to psycopg3 for pgbouncer compatibility`
 
 ---
 
