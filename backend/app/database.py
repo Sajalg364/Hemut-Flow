@@ -1,18 +1,31 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.pool import NullPool
 from app.config import settings
 
-engine = create_async_engine(
-    settings.DATABASE_URL,
-    echo=settings.APP_ENV == "development",
-    pool_size=20,
-    max_overflow=10,
-    pool_pre_ping=True,
-    connect_args={
-        "statement_cache_size": 0,
-        "prepared_statement_cache_size": 0,
-    }
-)
+# Detect if we're connecting through PgBouncer (e.g. Supabase pooler).
+# PgBouncer in transaction mode doesn't support prepared statements,
+# so we must disable statement caching AND use NullPool (let PgBouncer pool).
+_is_pgbouncer = "pooler.supabase.com" in settings.DATABASE_URL
+
+if _is_pgbouncer:
+    engine = create_async_engine(
+        settings.DATABASE_URL,
+        echo=settings.APP_ENV == "development",
+        poolclass=NullPool,
+        connect_args={
+            "statement_cache_size": 0,
+            "prepared_statement_cache_size": 0,
+        },
+    )
+else:
+    engine = create_async_engine(
+        settings.DATABASE_URL,
+        echo=settings.APP_ENV == "development",
+        pool_size=20,
+        max_overflow=10,
+        pool_pre_ping=True,
+    )
 
 async_session_factory = async_sessionmaker(
     engine,
