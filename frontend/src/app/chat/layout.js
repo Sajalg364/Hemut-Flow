@@ -68,7 +68,10 @@ function Sidebar() {
     <div className="sidebar">
       {/* Sidebar Header */}
       <div className="sidebar-header">
-        <h2>🚛 Hemut</h2>
+        <h2 style={{ display: 'flex', alignItems: 'center' }}>
+          <img src="/logo.jpg" alt="Hemut Logo" style={{ width: '28px', height: '28px', borderRadius: '4px', marginRight: '8px' }} />
+          Hemut
+        </h2>
       </div>
 
       {/* Sidebar Content */}

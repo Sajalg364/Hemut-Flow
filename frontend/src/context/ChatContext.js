@@ -127,6 +127,17 @@ export function ChatProvider({ children }) {
     }
   }, [fetchChannels]);
 
+  // Leave a channel
+  const leaveChannel = useCallback(async (channelId) => {
+    try {
+      await xhrPost(`${API_URL}/channels/${channelId}/leave`, {}, getAuthHeaders());
+      await fetchChannels();
+    } catch (err) {
+      console.error('Failed to leave channel:', err);
+      throw err;
+    }
+  }, [fetchChannels]);
+
   // Start/Get DM
   const startDM = useCallback(async (targetUserId) => {
     try {
@@ -369,6 +380,7 @@ export function ChatProvider({ children }) {
     sendMessage,
     createChannel,
     joinChannel,
+    leaveChannel,
     startDM,
     subscribeToChannel,
     sendTyping,

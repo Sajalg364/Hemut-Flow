@@ -1,5 +1,5 @@
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
@@ -17,6 +17,7 @@ router = APIRouter(prefix="/api/channels", tags=["messages"])
 async def post_message(
     channel_id: str,
     data: MessageCreate,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -39,6 +40,15 @@ async def post_message(
         message_type=data.message_type,
         metadata_json=data.metadata_json,
     )
+
+    # Only analyze regular text messages for escalations
+    if data.message_type == "text":
+        background_tasks.add_task(
+            check_and_escalate_message,
+            channel_id=channel_id,
+            sender_id=current_user.id,
+            content=data.content,
+        )
 
     return MessageResponse(
         id=message.id,
@@ -99,3 +109,86 @@ async def get_messages(
         has_more=has_more,
         next_cursor=next_cursor,
     )
+
+
+async def check_and_escalate_message(channel_id: str, sender_id: str, content: str):
+    """Background task to analyze a message for critical escalations and alert the channel."""
+    from app.services.ai_service import analyze_for_escalation
+    from app.services.message_service import create_message
+    from app.database import async_session_factory
+    import logging
+    
+    escalation = await analyze_for_escalation(content)
+    if escalation:
+        logging.info(f"Escalation detected in channel {channel_id}: {escalation['reason']}")
+        
+        async with async_session_factory() as db:
+            from app.models.channel import Channel
+            from app.models.user import User
+            from app.models.membership import Membership
+            from sqlalchemy import select
+            
+            # Find or create a global 'alerts' channel
+            result = await db.execute(select(Channel).where(Channel.name == "alerts", Channel.is_dm == False))
+            alerts_channel = result.scalar_one_or_none()
+            if not alerts_channel:
+                alerts_channel = Channel(
+                    name="alerts", 
+                    description="System-wide critical logistics escalations and AI alerts.", 
+                    created_by=sender_id,
+                    is_dm=False
+                )
+                db.add(alerts_channel)
+                await db.commit()
+                await db.refresh(alerts_channel)
+                
+            # Ensure ALL users are members of the alerts channel
+            users_res = await db.execute(select(User))
+            for u in users_res.scalars().all():
+                mem_res = await db.execute(select(Membership).where(
+                    Membership.user_id == u.id, 
+                    Membership.channel_id == alerts_channel.id
+                ))
+                if not mem_res.scalar_one_or_none():
+                    db.add(Membership(user_id=u.id, channel_id=alerts_channel.id))
+            await db.commit()
+
+            alert_content = f"⚠️ **AI ALERT:** Critical escalation detected! Reason: {escalation['reason']}"
+            if escalation.get('shipment_id'):
+                alert_content += f"\n📦 Shipment: {escalation['shipment_id']}"
+                
+            try:
+                # Post the alert in the original channel
+                await create_message(
+                    db=db,
+                    channel_id=channel_id,
+                    sender_id=sender_id, # Displayed as system message anyway
+                    content=alert_content,
+                    message_type="system",
+                )
+                
+                # If the original channel was not the alerts channel, post it there too
+                if channel_id != alerts_channel.id:
+                    # Fetch original channel and sender info for context
+                    orig_channel_res = await db.execute(select(Channel).where(Channel.id == channel_id))
+                    orig_channel = orig_channel_res.scalar_one_or_none()
+                    channel_name = f"#{orig_channel.name}" if orig_channel and not orig_channel.is_dm else "Direct Message"
+                    
+                    sender_res = await db.execute(select(User).where(User.id == sender_id))
+                    sender = sender_res.scalar_one_or_none()
+                    sender_name = f"@{sender.username}" if sender else "Unknown User"
+                    
+                    # Provide context on where it originated
+                    global_alert_content = alert_content + f"\n*(Cross-posted from {channel_name} | Reported by {sender_name})*"
+                    await create_message(
+                        db=db,
+                        channel_id=alerts_channel.id,
+                        sender_id=sender_id,
+                        content=global_alert_content,
+                        message_type="system",
+                    )
+                
+                await db.commit()
+            except Exception as e:
+                logging.error(f"Failed to post AI escalation alert: {e}")
+                await db.rollback()

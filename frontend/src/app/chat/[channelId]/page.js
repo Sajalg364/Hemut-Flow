@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { useChat } from '@/context/ChatContext';
 import { xhrGet, xhrPost } from '@/lib/xhr';
@@ -153,8 +153,10 @@ export default function ChannelPage() {
     messages, setMessages, fetchMessages, sendMessage,
     subscribeToChannel, sendTyping, typingUsers,
     channels, dmConversations, fetchChannels,
-    setCurrentChannel, clearChannelUnread,
+    setCurrentChannel, clearChannelUnread, leaveChannel,
   } = useChat();
+
+  const router = useRouter();
 
   const [messageInput, setMessageInput] = useState('');
   const [channelInfo, setChannelInfo] = useState(null);
@@ -163,8 +165,11 @@ export default function ChannelPage() {
   const [sending, setSending] = useState(false);
   const [aiSummary, setAiSummary] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
+  const [showLeaveModal, setShowLeaveModal] = useState(false);
+  const [leaving, setLeaving] = useState(false);
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
+  const loadMoreRef = useRef(null);
   const typingTimeoutRef = useRef(null);
 
   // Load channel info and messages
@@ -217,14 +222,44 @@ export default function ChannelPage() {
     }
   }, [messages]);
 
-  // Load more (older) messages
-  const loadMore = async () => {
+  // Load more (older) messages with preserved scroll position
+  const loadMore = useCallback(async () => {
     if (!hasMore || !messages.length) return;
     const oldest = messages[0]?.created_at;
+
+    const container = messagesContainerRef.current;
+    const previousScrollHeight = container ? container.scrollHeight : 0;
+
     const data = await fetchMessages(channelId, oldest);
     setMessages(prev => [...(data.messages || []), ...prev]);
     setHasMore(data.has_more || false);
-  };
+
+    // Restore scroll position so view doesn't jump
+    setTimeout(() => {
+      if (container) {
+        container.scrollTop = container.scrollHeight - previousScrollHeight;
+      }
+    }, 0);
+  }, [hasMore, messages, channelId, fetchMessages, setMessages]);
+
+  // Infinite scroll observer
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore) {
+          loadMore();
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    const currentRef = loadMoreRef.current;
+    if (currentRef) observer.observe(currentRef);
+
+    return () => {
+      if (currentRef) observer.unobserve(currentRef);
+    };
+  }, [hasMore, loadMore]);
 
   // Handle message send
   const handleSend = async () => {
@@ -340,7 +375,16 @@ export default function ChannelPage() {
         </div>
         <div className="chat-header-actions">
           {!channelInfo?.is_dm && (
-            <button
+            <>
+              <button
+                className="btn btn-ghost"
+                style={{ fontSize: '0.8rem', color: 'var(--accent-danger)' }}
+                onClick={() => setShowLeaveModal(true)}
+                title="Leave Channel"
+              >
+                Leave
+              </button>
+              <button
               className="btn btn-ghost"
               onClick={async () => {
                 setAiLoading(true);
@@ -361,7 +405,8 @@ export default function ChannelPage() {
               style={{ fontSize: '0.8rem' }}
             >
               🤖 Summarize
-            </button>
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -384,6 +429,9 @@ export default function ChannelPage() {
 
       {/* Messages */}
       <div className="messages-container" ref={messagesContainerRef}>
+        {/* Infinite Scroll trigger element */}
+        <div ref={loadMoreRef} style={{ height: '10px', width: '100%' }} />
+
         {hasMore && (
           <button
             className="btn btn-ghost"
@@ -449,6 +497,50 @@ export default function ChannelPage() {
           </button>
         </div>
       </div>
+
+      {/* Leave Channel Confirmation Modal */}
+      {showLeaveModal && (
+        <div className="modal-overlay" onClick={() => setShowLeaveModal(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px' }}>
+            <div className="modal-header">
+              <h3>Leave Channel</h3>
+              <button className="btn-ghost" onClick={() => setShowLeaveModal(false)}>✕</button>
+            </div>
+            <div style={{ margin: '20px 0' }}>
+              <p>Are you sure you want to leave <strong>{getChannelDisplayName()}</strong>?</p>
+              <p style={{ marginTop: '8px', fontSize: '0.9rem', color: 'var(--text-tertiary)' }}>
+                You won't receive any more messages or alerts from this channel unless you rejoin.
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button
+                className="btn btn-ghost"
+                onClick={() => setShowLeaveModal(false)}
+                disabled={leaving}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn"
+                style={{ backgroundColor: 'var(--accent-danger)', color: 'white' }}
+                onClick={async () => {
+                  setLeaving(true);
+                  try {
+                    await leaveChannel(channelId);
+                    router.push('/chat');
+                  } catch (err) {
+                    alert('Failed to leave channel');
+                    setLeaving(false);
+                  }
+                }}
+                disabled={leaving}
+              >
+                {leaving ? 'Leaving...' : 'Leave Channel'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

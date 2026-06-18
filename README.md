@@ -62,11 +62,12 @@ A **Slack-style collaboration platform** built for logistics teams, featuring re
 
 ### Core Chat
 - ✅ **User Registration & Login** — DB-backed auth with JWT tokens
-- ✅ **Channels** — Create, join, leave channels (e.g., #route-east, #warehouse-mumbai)
+- ✅ **Channels** — Create, discover (Browse Channels modal), join, and leave channels
 - ✅ **Direct Messages** — 1:1 private conversations
 - ✅ **Real-time Messaging** — WebSocket-powered with Redis pub/sub
-- ✅ **Message History** — Cursor-based pagination
+- ✅ **Message Pagination** — Infinite scroll with `IntersectionObserver` to lazy-load older messages
 - ✅ **Unread Indicators** — Redis-backed unread counters per channel
+- ✅ **Custom UI Modals** — Glassmorphism modals instead of default browser popups
 
 ### Logistics Context
 - ✅ **`/shipment <id>` Slash Command** — Lookup shipment details inline
@@ -79,10 +80,11 @@ A **Slack-style collaboration platform** built for logistics teams, featuring re
 - ✅ **Heartbeat-based** — 30s client heartbeat, 60s Redis TTL
 - ✅ **Real-time Updates** — Reactive transitions broadcast via WebSockets and Redis pub/sub
 
-### AI Feature
-- ✅ **Channel Summarization** — "Catch me up" on any channel
+### AI Features
+- ✅ **Proactive Escalation Detection** — AI scans messages in the background to detect urgent issues (e.g., truck breakdowns) and cross-posts alerts to a global `#alerts` channel.
+- ✅ **Channel Summarization** — "Catch me up" digest on any channel
 - ✅ **Streaming Support** — Progressive rendering of AI responses
-- ✅ **Redis Caching** — 5-minute cache to avoid redundant API calls
+- ✅ **Redis Caching** — 5-minute cache to avoid redundant summarization API calls
 
 ### Technical
 - ✅ **XMLHttpRequest** — All form validation and REST APIs use raw XHR (no fetch/axios)
@@ -91,29 +93,21 @@ A **Slack-style collaboration platform** built for logistics teams, featuring re
 
 ---
 
-## 🤖 AI Feature: Channel Summarization
+## 🤖 AI Features
 
-### Why This Feature?
+We implemented two primary AI features using **Google Gemini 2.5 Flash** to streamline logistics operations:
 
-Logistics teams operate **24/7 across time zones**. Dispatchers coming on shift waste significant time scrolling through hundreds of overnight messages. Channel summarization solves a **real, daily pain point** by providing a concise "catch me up" digest.
+### 1. Proactive Escalation Detection (Background AI)
+Logistics managers cannot monitor every DM or local channel. If a driver reports a breakdown or severe delay, the system needs to flag it immediately.
+- **How it works**: Every message sent is asynchronously processed by a FastAPI `BackgroundTasks` hook.
+- **Action**: The AI determines if the message contains a critical delay or escalation. If true, it automatically extracts the reason and shipment ID.
+- **Routing**: The AI instantly posts a system alert in the original channel to acknowledge the issue, and **cross-posts it to a global `#alerts` channel** (automatically joining all users to it) so managers get immediate situational awareness.
 
-**Real user pain it addresses:**
-- Shift handoffs: Night dispatcher → Morning dispatcher
-- Route managers catching up on #route-east after a day off
-- Warehouse supervisors scanning #warehouse-mumbai for urgent issues
-
-### How It Works
-
-1. User clicks **"🤖 Summarize"** button or types **`/summarize`** (optionally `/summarize 12h`)
-2. Backend fetches last N hours of messages from PostgreSQL (capped at 200)
-3. Messages are formatted with timestamps and usernames
-4. Sent to **Google Gemini** (`gemini-2.5-flash`) with a **logistics-aware system prompt** focusing on:
-   - Shipment delays and status changes
-   - Route diversions
-   - Action items and escalations
-   - Tracking IDs and PO numbers
-5. Response is cached in **Redis for 5 minutes**
-6. Displayed in a styled AI panel with dismiss option
+### 2. On-Demand Channel Summarization
+Logistics teams operate **24/7 across time zones**. Dispatchers coming on shift waste significant time scrolling through hundreds of overnight messages.
+- **How it works**: User clicks **"🤖 Summarize"** or types `/summarize`.
+- **Action**: Backend fetches last N hours of messages, formats them, and asks Gemini for a digest focused on delays, diversions, and PO numbers.
+- **Caching**: Response is cached in **Redis for 5 minutes**.
 
 ### What Would Change in Production
 
@@ -353,9 +347,11 @@ Once the backend is running, visit **http://localhost:8000/docs** for interactiv
 ## 📝 Commit History
 
 This project was built incrementally with meaningful commits:
-1. feat: initial working prototype of Hemut logistics collaboration platform
-11. fix: updated ai model & chat refresh issue
-12. feat: implement DM presence reactivity, WS reconnect sync, and full Docker orchestration
+1. `feat: initial working prototype of Hemut logistics collaboration platform`
+2. `fix: updated ai model & chat refresh issue`
+3. `feat: implement DM presence reactivity, WS reconnect sync, and full Docker orchestration`
+4. `feat: added Browse Channels discovery feature`
+5. `feat: implemented proactive AI escalation detection, pagination, leave channels`
 
 ---
 

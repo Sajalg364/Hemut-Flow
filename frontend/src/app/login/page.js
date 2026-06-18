@@ -48,9 +48,12 @@ export default function LoginPage() {
   return (
     <div className="auth-container">
       <div className="auth-card">
-        <div className="auth-logo">
-          <h1>🚛 Hemut</h1>
-          <p>Real-Time Logistics Collaboration</p>
+        <div className="auth-header">
+          <h1 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <img src="/logo.jpg" alt="Hemut Logo" style={{ width: '32px', height: '32px', borderRadius: '4px', marginRight: '12px' }} />
+            Hemut
+          </h1>
+          <p>Logistics Collaboration Platform</p>
         </div>
 
         {serverError && (

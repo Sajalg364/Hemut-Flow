@@ -108,3 +108,54 @@ async def get_channel_summary(
             f"**Stats:** {len(rows)} messages from {len(set(r.username for r in rows))} participants.\n\n"
             f"**Latest message:** {rows[-1][0].content[:200]}..."
         )
+
+ESCALATION_PROMPT = """You are a logistics operations assistant for Hemut.
+Your task is to analyze a single chat message and determine if it represents a critical escalation or urgent issue (e.g. accident, truck breakdown, severe delay, lost cargo, theft).
+
+If it DOES represent a critical escalation, respond with a JSON object in exactly this format:
+{"is_escalation": true, "reason": "Brief explanation", "shipment_id": "Extracted SHIP-XXXX ID if present, else null"}
+
+If it DOES NOT represent a critical escalation, respond with:
+{"is_escalation": false}
+
+Respond ONLY with valid JSON, nothing else.
+
+Message to analyze:
+{content}
+"""
+
+async def analyze_for_escalation(content: str) -> dict | None:
+    """Analyze a message for critical logistics escalations using Gemini."""
+    try:
+        import google.generativeai as genai
+
+        genai.configure(api_key=settings.GEMINI_API_KEY)
+        model = genai.GenerativeModel("gemini-2.5-flash")
+        
+        prompt = ESCALATION_PROMPT.replace("{content}", content)
+        response = model.generate_content(prompt)
+        text = response.text.strip()
+        
+        # Remove any markdown code block formatting if Gemini adds it
+        if text.startswith("```json"):
+            text = text[7:-3].strip()
+        elif text.startswith("```"):
+            text = text[3:-3].strip()
+            
+        import json
+        logger.info(f"Raw AI response: {text}")
+        result = json.loads(text)
+        
+        if isinstance(result, str):
+            result = json.loads(result)
+        
+        if result.get("is_escalation"):
+            return {
+                "reason": result.get("reason", "Unknown escalation"),
+                "shipment_id": result.get("shipment_id")
+            }
+        return None
+
+    except Exception as e:
+        logger.error(f"AI escalation analysis failed. Raw text: {text if 'text' in locals() else 'N/A'}", exc_info=True)
+        return None
