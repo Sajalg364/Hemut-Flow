@@ -1,31 +1,23 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy.pool import NullPool
 from app.config import settings
 
-# Detect if we're connecting through PgBouncer (e.g. Supabase pooler).
-# PgBouncer in transaction mode doesn't support prepared statements,
-# so we must disable statement caching AND use NullPool (let PgBouncer pool).
-_is_pgbouncer = "pooler.supabase.com" in settings.DATABASE_URL
+# Normalise the DATABASE_URL to use the psycopg async dialect.
+# The user (or Render env-var) may supply any of:
+#   postgresql://…  |  postgresql+asyncpg://…  |  postgresql+psycopg://…
+_db_url = settings.DATABASE_URL
+if _db_url.startswith("postgresql+asyncpg://"):
+    _db_url = _db_url.replace("postgresql+asyncpg://", "postgresql+psycopg://", 1)
+elif _db_url.startswith("postgresql://"):
+    _db_url = _db_url.replace("postgresql://", "postgresql+psycopg://", 1)
 
-if _is_pgbouncer:
-    engine = create_async_engine(
-        settings.DATABASE_URL,
-        echo=settings.APP_ENV == "development",
-        poolclass=NullPool,
-        connect_args={
-            "statement_cache_size": 0,
-            "prepared_statement_cache_size": 0,
-        },
-    )
-else:
-    engine = create_async_engine(
-        settings.DATABASE_URL,
-        echo=settings.APP_ENV == "development",
-        pool_size=20,
-        max_overflow=10,
-        pool_pre_ping=True,
-    )
+engine = create_async_engine(
+    _db_url,
+    echo=settings.APP_ENV == "development",
+    pool_size=5,
+    max_overflow=5,
+    pool_pre_ping=True,
+)
 
 async_session_factory = async_sessionmaker(
     engine,

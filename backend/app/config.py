@@ -8,7 +8,7 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file_
 
 class Settings(BaseSettings):
     # Database
-    DATABASE_URL: str = "postgresql+asyncpg://hemut_user:hemut_pass_2024@localhost:5433/hemut"
+    DATABASE_URL: str = "postgresql+psycopg://hemut_user:hemut_pass_2024@localhost:5433/hemut"
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
