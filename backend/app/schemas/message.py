@@ -8,6 +8,10 @@ class MessageCreate(BaseModel):
     metadata_json: dict | None = None
 
 
+class MessageUpdate(BaseModel):
+    content: str = Field(..., min_length=1, max_length=5000)
+
+
 class MessageResponse(BaseModel):
     id: str
     channel_id: str
@@ -19,6 +23,8 @@ class MessageResponse(BaseModel):
     message_type: str = "text"
     metadata_json: dict | None = None
     created_at: datetime
+    is_edited: bool = False
+    is_deleted: bool = False
 
     class Config:
         from_attributes = True

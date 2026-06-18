@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import String, Text, DateTime, ForeignKey, Index, JSON
+from sqlalchemy import String, Text, DateTime, ForeignKey, Index, JSON, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
@@ -39,6 +39,8 @@ class Message(Base):
         default=lambda: datetime.now(timezone.utc),
         index=True,
     )
+    is_edited: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # Relationships
     channel = relationship("Channel", back_populates="messages")

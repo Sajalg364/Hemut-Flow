@@ -5,8 +5,8 @@ from sqlalchemy import select
 from app.database import get_db
 from app.models.membership import Membership
 from app.models.user import User
-from app.schemas.message import MessageCreate, MessageResponse, MessageListResponse
-from app.services.message_service import create_message, get_channel_messages
+from app.schemas.message import MessageCreate, MessageResponse, MessageListResponse, MessageUpdate
+from app.services.message_service import create_message, get_channel_messages, edit_message, delete_message
 from app.services.presence_service import clear_unread
 from app.dependencies import get_current_user
 
@@ -109,6 +109,76 @@ async def get_messages(
         has_more=has_more,
         next_cursor=next_cursor,
     )
+
+
+@router.put("/{channel_id}/messages/{message_id}", response_model=MessageResponse)
+async def update_message(
+    channel_id: str,
+    message_id: str,
+    data: MessageUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Edit an existing message."""
+    from app.models.message import Message
+    
+    # Fetch the message
+    result = await db.execute(select(Message).where(Message.id == message_id, Message.channel_id == channel_id))
+    message = result.scalar_one_or_none()
+    
+    if not message:
+        raise HTTPException(status_code=404, detail="Message not found")
+        
+    # Verify ownership
+    if message.sender_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You can only edit your own messages")
+        
+    if message.is_deleted:
+        raise HTTPException(status_code=400, detail="Cannot edit a deleted message")
+
+    updated_message = await edit_message(db, message, data.content)
+    
+    return MessageResponse(
+        id=updated_message.id,
+        channel_id=updated_message.channel_id,
+        sender_id=updated_message.sender_id,
+        sender_username=current_user.username,
+        sender_display_name=current_user.display_name,
+        sender_avatar_url=current_user.avatar_url,
+        content=updated_message.content,
+        message_type=updated_message.message_type,
+        metadata_json=updated_message.metadata_json,
+        created_at=updated_message.created_at,
+        is_edited=updated_message.is_edited,
+        is_deleted=updated_message.is_deleted,
+    )
+
+
+@router.delete("/{channel_id}/messages/{message_id}")
+async def delete_message_endpoint(
+    channel_id: str,
+    message_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Soft delete a message."""
+    from app.models.message import Message
+    
+    # Fetch the message
+    result = await db.execute(select(Message).where(Message.id == message_id, Message.channel_id == channel_id))
+    message = result.scalar_one_or_none()
+    
+    if not message:
+        raise HTTPException(status_code=404, detail="Message not found")
+        
+    # Verify ownership
+    if message.sender_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You can only delete your own messages")
+
+    if not message.is_deleted:
+        await delete_message(db, message)
+    
+    return {"status": "success", "message": "Message deleted"}
 
 
 async def check_and_escalate_message(channel_id: str, sender_id: str, content: str):

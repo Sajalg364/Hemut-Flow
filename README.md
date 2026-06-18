@@ -66,8 +66,9 @@ A **Slack-style collaboration platform** built for logistics teams, featuring re
 - ✅ **Direct Messages** — 1:1 private conversations
 - ✅ **Real-time Messaging** — WebSocket-powered with Redis pub/sub
 - ✅ **Message Pagination** — Infinite scroll with `IntersectionObserver` to lazy-load older messages
+- ✅ **Edit & Delete Messages** — Full CRUD support with real-time WebSocket syncing and edited tags
 - ✅ **Unread Indicators** — Redis-backed unread counters per channel
-- ✅ **Custom UI Modals** — Glassmorphism modals instead of default browser popups
+- ✅ **Custom UI & Polish** — Crisp SVG icons, glassmorphism modals, and command autocomplete popup
 
 ### Logistics Context
 - ✅ **`/shipment <id>` Slash Command** — Lookup shipment details inline
@@ -289,6 +290,8 @@ Once the backend is running, visit **http://localhost:8000/docs** for interactiv
 | POST | `/api/channels/` | Create channel |
 | GET | `/api/channels/{id}/messages` | Paginated history |
 | POST | `/api/channels/{id}/messages` | Send message |
+| PUT | `/api/channels/{id}/messages/{msg_id}` | Edit message |
+| DELETE | `/api/channels/{id}/messages/{msg_id}` | Delete message |
 | POST | `/api/dm/{user_id}` | Start/get DM |
 | GET | `/api/shipments/{id}` | Lookup shipment |
 | POST | `/api/ai/summarize` | AI channel summary |
@@ -352,6 +355,7 @@ This project was built incrementally with meaningful commits:
 3. `feat: implement DM presence reactivity, WS reconnect sync, and full Docker orchestration`
 4. `feat: added Browse Channels discovery feature`
 5. `feat: implemented proactive AI escalation detection, pagination, leave channels`
+6. `feat: added message edit/delete CRUD, slash command autocomplete`
 
 ---
 

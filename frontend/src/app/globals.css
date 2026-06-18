@@ -1324,3 +1324,7 @@ a:hover {
     padding: 8px 16px 12px;
   }
 }
+/* Hover effects for messages */
+.message-group.group:hover .hidden-actions {
+  opacity: 1 !important;
+}

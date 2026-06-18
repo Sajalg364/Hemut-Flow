@@ -196,6 +196,18 @@ export function ChatProvider({ children }) {
         }
         break;
 
+      case 'message_updated':
+        setMessages(prev => prev.map(m => 
+          m.id === message.data.id ? { ...m, content: message.data.content, is_edited: message.data.is_edited } : m
+        ));
+        break;
+
+      case 'message_deleted':
+        setMessages(prev => prev.map(m => 
+          m.id === message.data.id ? { ...m, content: message.data.content, is_deleted: true } : m
+        ));
+        break;
+
       case 'presence_update':
         const presenceData = message.data;
         setOnlineUsers(prev => {

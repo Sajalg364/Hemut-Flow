@@ -4,7 +4,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { useChat } from '@/context/ChatContext';
-import { xhrGet, xhrPost } from '@/lib/xhr';
+import { xhrGet, xhrPost, xhrPut, xhrDelete } from '@/lib/xhr';
 import { getAuthHeaders } from '@/lib/auth';
 import { API_URL } from '@/lib/constants';
 
@@ -90,6 +90,12 @@ function AISummaryPanel({ summary, loading: aiLoading }) {
 
 // Message Bubble Component
 function MessageBubble({ message, isOwn }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editContent, setEditContent] = useState(message.content);
+  const [isSaving, setIsSaving] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   const getAvatarInitials = (name) => {
     if (!name) return '?';
     return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
@@ -102,7 +108,58 @@ function MessageBubble({ message, isOwn }) {
     });
   };
 
+  const handleEditSave = async () => {
+    if (!editContent.trim() || editContent === message.content) {
+      setIsEditing(false);
+      return;
+    }
+    try {
+      setIsSaving(true);
+      await xhrPut(`${API_URL}/channels/${message.channel_id}/messages/${message.id}`, { content: editContent }, getAuthHeaders());
+      setIsEditing(false);
+    } catch (err) {
+      console.error('Failed to edit message', err);
+      alert('Failed to edit message');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    setIsDeleting(true);
+    try {
+      await xhrDelete(`${API_URL}/channels/${message.channel_id}/messages/${message.id}`, getAuthHeaders());
+      setShowDeleteModal(false);
+    } catch (err) {
+      console.error('Failed to delete message', err);
+      alert('Failed to delete message');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const renderContent = () => {
+    if (message.is_deleted) {
+      return <div className="message-content"><p style={{ fontStyle: 'italic', color: 'var(--text-tertiary)' }}>This message was deleted.</p></div>;
+    }
+
+    if (isEditing) {
+      return (
+        <div className="message-content edit-mode" style={{ width: '100%', marginTop: '4px' }}>
+          <textarea 
+            value={editContent} 
+            onChange={e => setEditContent(e.target.value)}
+            style={{ width: '100%', minHeight: '60px', padding: '8px', borderRadius: '4px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', fontFamily: 'inherit', resize: 'vertical' }}
+            disabled={isSaving}
+          />
+          <div style={{ display: 'flex', gap: '8px', marginTop: '8px', justifyContent: 'flex-end' }}>
+            <button onClick={() => { setIsEditing(false); setEditContent(message.content); }} disabled={isSaving} className="btn-ghost" style={{ padding: '6px 16px', fontSize: '0.8rem', borderRadius: '4px' }}>Cancel</button>
+            <button onClick={handleEditSave} disabled={isSaving} className="btn-primary" style={{ padding: '6px 16px', fontSize: '0.8rem', borderRadius: '4px', width: 'auto', minWidth: '70px', border: 'none', cursor: 'pointer' }}>{isSaving ? 'Saving' : 'Save'}</button>
+          </div>
+        </div>
+      );
+    }
+
     if (message.message_type === 'shipment' && message.metadata_json) {
       return (
         <>
@@ -117,7 +174,11 @@ function MessageBubble({ message, isOwn }) {
     if (message.message_type === 'system') {
       return <div className="system-message">{message.content}</div>;
     }
-    return <div className="message-content"><p>{message.content}</p></div>;
+    return (
+      <div className="message-content">
+        <p>{message.content}</p>
+      </div>
+    );
   };
 
   if (message.message_type === 'system') {
@@ -125,7 +186,7 @@ function MessageBubble({ message, isOwn }) {
   }
 
   return (
-    <div className="message-group">
+    <div className="message-group group" style={{ position: 'relative' }}>
       <div className="message-avatar">
         <div className="user-avatar">
           <div className="avatar-circle">
@@ -133,15 +194,66 @@ function MessageBubble({ message, isOwn }) {
           </div>
         </div>
       </div>
-      <div className="message-body">
-        <div className="message-header">
+      <div className="message-body" style={{ width: '100%' }}>
+        <div className="message-header" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span className="message-sender">
             {message.sender_display_name || message.sender_username}
           </span>
           <span className="message-time">{formatTime(message.created_at)}</span>
+          {message.is_edited && !message.is_deleted && <span className="message-edited" style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)' }}>(edited)</span>}
+          
+          {/* Action Icons for Own Messages */}
+          {isOwn && !message.is_deleted && !isEditing && (
+            <div className="message-actions hidden-actions" style={{ display: 'flex', gap: '4px', marginLeft: 'auto', opacity: 0, transition: 'opacity 0.2s' }}>
+              <button onClick={() => setIsEditing(true)} title="Edit Message" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '2px' }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+              </button>
+              <button onClick={() => setShowDeleteModal(true)} title="Delete Message" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--error-color)', padding: '2px' }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+              </button>
+            </div>
+          )}
         </div>
         {renderContent()}
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="modal-overlay" onClick={() => setShowDeleteModal(false)} style={{ zIndex: 1000 }}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px' }}>
+            <div className="modal-header">
+              <h3>Delete Message</h3>
+              <button className="btn-ghost" onClick={() => setShowDeleteModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.2rem', color: 'var(--text-secondary)' }}>✕</button>
+            </div>
+            <div style={{ margin: '20px 0' }}>
+              <p>Are you sure you want to delete this message?</p>
+              <div style={{ marginTop: '12px', padding: '12px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '6px', fontSize: '0.9rem', color: 'var(--text-secondary)', fontStyle: 'italic', wordBreak: 'break-word' }}>
+                "{message.content}"
+              </div>
+              <p style={{ marginTop: '12px', fontSize: '0.9rem', color: 'var(--text-tertiary)' }}>
+                This action cannot be undone.
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                disabled={isDeleting}
+                className="btn-ghost"
+                style={{ padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', border: '1px solid var(--border-color)', background: 'transparent', color: 'var(--text-primary)' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={isDeleting}
+                style={{ padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', backgroundColor: 'var(--error-color)', color: 'white', border: 'none' }}
+              >
+                {isDeleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -167,7 +279,14 @@ export default function ChannelPage() {
   const [aiLoading, setAiLoading] = useState(false);
   const [showLeaveModal, setShowLeaveModal] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  const [showCommandSuggestions, setShowCommandSuggestions] = useState(false);
+  const [commandFilter, setCommandFilter] = useState('');
   const messagesEndRef = useRef(null);
+  
+  const COMMANDS = [
+    { cmd: '/summarize', desc: 'Get an AI summary of this channel' },
+    { cmd: '/shipment', desc: 'Lookup details for a shipment (e.g. /shipment SHIP-1042)' }
+  ];
   const messagesContainerRef = useRef(null);
   const loadMoreRef = useRef(null);
   const typingTimeoutRef = useRef(null);
@@ -261,15 +380,16 @@ export default function ChannelPage() {
     };
   }, [hasMore, loadMore]);
 
-  // Handle message send
   const handleSend = async () => {
-    const content = messageInput.trim();
-    if (!content || sending) return;
+    if (!messageInput.trim()) return;
 
-    setSending(true);
+    const content = messageInput.trim();
     setMessageInput('');
 
     try {
+      setSending(true);
+      setShowCommandSuggestions(false);
+
       // Handle /shipment slash command
       const shipmentMatch = content.match(/^\/shipment\s+(\S+)/i);
       if (shipmentMatch) {
@@ -328,7 +448,17 @@ export default function ChannelPage() {
 
   // Handle typing indicator
   const handleInputChange = (e) => {
-    setMessageInput(e.target.value);
+    const val = e.target.value;
+    setMessageInput(val);
+    
+    // Command suggestions
+    if (val.startsWith('/')) {
+      setShowCommandSuggestions(true);
+      setCommandFilter(val.substring(1).toLowerCase());
+    } else {
+      setShowCommandSuggestions(false);
+    }
+
     // Throttle typing indicator
     if (!typingTimeoutRef.current) {
       sendTyping(channelId);
@@ -477,7 +607,47 @@ export default function ChannelPage() {
       </div>
 
       {/* Message Input */}
-      <div className="message-input-container">
+      <div className="message-input-container" style={{ position: 'relative' }}>
+        
+        {/* Command Suggestions Popup */}
+        {showCommandSuggestions && (
+          <div className="command-suggestions" style={{
+            position: 'absolute',
+            bottom: '100%',
+            left: 0,
+            right: 0,
+            backgroundColor: 'var(--bg-elevated)',
+            border: '1px solid var(--border-default)',
+            borderRadius: '8px 8px 0 0',
+            marginBottom: '8px',
+            boxShadow: 'var(--shadow-md)',
+            zIndex: 10,
+            maxHeight: '200px',
+            overflowY: 'auto'
+          }}>
+            {COMMANDS.filter(c => c.cmd.toLowerCase().includes(commandFilter)).map((c) => (
+              <div 
+                key={c.cmd} 
+                style={{ padding: '10px 16px', cursor: 'pointer', borderBottom: '1px solid var(--border-subtle)' }}
+                onClick={() => {
+                  setMessageInput(c.cmd + ' ');
+                  setShowCommandSuggestions(false);
+                  document.getElementById('message-input').focus();
+                }}
+                onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-hover)'}
+                onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+              >
+                <strong style={{ color: 'var(--accent-primary)' }}>{c.cmd}</strong> <span style={{ color: 'var(--text-tertiary)', fontSize: '0.85rem', marginLeft: '8px' }}>{c.desc}</span>
+              </div>
+            ))}
+            {COMMANDS.filter(c => c.cmd.toLowerCase().includes(commandFilter)).length === 0 && (
+              <div style={{ padding: '10px 16px', color: 'var(--text-tertiary)', fontSize: '0.9rem' }}>
+                No commands found
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="message-input-wrapper">
           <textarea
             placeholder={`Message ${getChannelDisplayName()}... (try /shipment SHIP-1042 or /summarize)`}

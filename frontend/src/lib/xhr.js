@@ -140,6 +140,14 @@ export function xhrPost(url, data, headers = {}) {
   return xhrRequest({ method: 'POST', url, data, headers });
 }
 
+export function xhrPut(url, data, headers = {}) {
+  return xhrRequest({ method: 'PUT', url, data, headers });
+}
+
+export function xhrDelete(url, headers = {}) {
+  return xhrRequest({ method: 'DELETE', url, headers });
+}
+
 /**
  * Create an XHR request that can be aborted
  * Returns { promise, abort }

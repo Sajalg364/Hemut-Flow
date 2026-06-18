@@ -46,6 +46,8 @@ async def create_message(
             "message_type": message.message_type,
             "metadata_json": message.metadata_json,
             "created_at": message.created_at.isoformat(),
+            "is_edited": message.is_edited,
+            "is_deleted": message.is_deleted,
         },
     }
     await redis.publish(f"channel:{channel_id}", json.dumps(message_data))
@@ -105,8 +107,61 @@ async def get_channel_messages(
             "message_type": msg.message_type,
             "metadata_json": msg.metadata_json,
             "created_at": msg.created_at.isoformat(),
+            "is_edited": msg.is_edited,
+            "is_deleted": msg.is_deleted,
         })
 
     # Return in chronological order (oldest first)
     messages.reverse()
     return messages, has_more
+
+
+async def edit_message(
+    db: AsyncSession,
+    message: Message,
+    new_content: str,
+) -> Message:
+    """Edit a message and broadcast the update."""
+    message.content = new_content
+    message.is_edited = True
+    await db.commit()
+    await db.refresh(message)
+
+    # Broadcast update
+    redis = await get_redis()
+    message_data = {
+        "type": "message_updated",
+        "data": {
+            "id": str(message.id),
+            "channel_id": str(message.channel_id),
+            "content": message.content,
+            "is_edited": message.is_edited,
+        },
+    }
+    await redis.publish(f"channel:{message.channel_id}", json.dumps(message_data))
+    return message
+
+
+async def delete_message(
+    db: AsyncSession,
+    message: Message,
+) -> Message:
+    """Soft delete a message and broadcast the deletion."""
+    message.is_deleted = True
+    message.content = "This message was deleted"
+    await db.commit()
+    await db.refresh(message)
+
+    # Broadcast deletion
+    redis = await get_redis()
+    message_data = {
+        "type": "message_deleted",
+        "data": {
+            "id": str(message.id),
+            "channel_id": str(message.channel_id),
+            "is_deleted": True,
+            "content": message.content,
+        },
+    }
+    await redis.publish(f"channel:{message.channel_id}", json.dumps(message_data))
+    return message
